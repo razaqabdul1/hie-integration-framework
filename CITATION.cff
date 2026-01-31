@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Health Information Exchange Integration Framework"
+abstract: "A technical framework for building resilient, compliant, and high-performance HIE integration platforms. Includes patterns for active-active deployment, asynchronous audit logging, adaptive DNS failover, and performance optimization."
+authors:
+  - family-names: "Jawahar"
+    given-names: "Abdul Razack Razack"
+    orcid: "https://orcid.org/0009-0002-9825-2232"
+version: "1.0.0"
+date-released: "2026-01-25"
+license: "CC-BY-4.0"
+repository-code: "https://github.com/[your-username]/hie-integration-framework"
+url: "https://doi.org/10.5281/zenodo.18438082"
+keywords:
+  - health information exchange
+  - HIE
+  - HL7
+  - FHIR
+  - healthcare interoperability
+  - HIPAA
+  - TEFCA
+  - enterprise integration
+  - system resilience
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.18438082"
+    description: "Zenodo archive of the technical framework document"
