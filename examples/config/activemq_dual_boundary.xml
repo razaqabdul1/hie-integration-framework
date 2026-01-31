@@ -1,0 +1,251 @@
+<!--
+  activemq_dual_boundary.xml
+  
+  Apache ActiveMQ configuration with dual security boundaries.
+  Part of the HIE Integration Framework.
+  
+  Author: Abdul Razack Razack Jawahar
+  License: CC BY 4.0
+  
+  This configuration creates two transport connectors:
+  - Internal: High-performance, minimal overhead for trusted service-to-service
+  - External: TLS-encrypted with certificate authentication for trading partners
+-->
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+                           http://www.springframework.org/schema/beans/spring-beans.xsd
+                           http://activemq.apache.org/schema/core
+                           http://activemq.apache.org/schema/core/activemq-core.xsd">
+
+    <!-- 
+    ============================================================================
+    SSL CONTEXT CONFIGURATION
+    ============================================================================
+    -->
+    <sslContext>
+        <sslContext
+            keyStore="${activemq.conf}/broker.ks"
+            keyStorePassword="${ACTIVEMQ_KEYSTORE_PASSWORD}"
+            trustStore="${activemq.conf}/broker.ts"
+            trustStorePassword="${ACTIVEMQ_TRUSTSTORE_PASSWORD}">
+        </sslContext>
+    </sslContext>
+
+    <broker xmlns="http://activemq.apache.org/schema/core" 
+            brokerName="hie-broker" 
+            dataDirectory="${activemq.data}"
+            useJmx="true"
+            advisorySupport="false">
+
+        <!-- 
+        ============================================================================
+        DESTINATION POLICIES
+        ============================================================================
+        -->
+        <destinationPolicy>
+            <policyMap>
+                <policyEntries>
+                    <!-- Audit queue policy: high durability -->
+                    <policyEntry queue="audit.>" 
+                                 producerFlowControl="true"
+                                 memoryLimit="256mb"
+                                 prioritizedMessages="true"
+                                 useCache="false"
+                                 expireMessagesPeriod="0">
+                        <deadLetterStrategy>
+                            <individualDeadLetterStrategy 
+                                queuePrefix="DLQ."
+                                useQueueForQueueMessages="true"/>
+                        </deadLetterStrategy>
+                    </policyEntry>
+                    
+                    <!-- Clinical message queue policy -->
+                    <policyEntry queue="clinical.>" 
+                                 producerFlowControl="true"
+                                 memoryLimit="128mb"
+                                 prioritizedMessages="true"
+                                 useCache="true"
+                                 expireMessagesPeriod="300000">
+                        <deadLetterStrategy>
+                            <individualDeadLetterStrategy 
+                                queuePrefix="DLQ."
+                                useQueueForQueueMessages="true"/>
+                        </deadLetterStrategy>
+                    </policyEntry>
+                    
+                    <!-- Default policy -->
+                    <policyEntry queue=">" 
+                                 producerFlowControl="true"
+                                 memoryLimit="64mb">
+                    </policyEntry>
+                </policyEntries>
+            </policyMap>
+        </destinationPolicy>
+
+        <!-- 
+        ============================================================================
+        MANAGEMENT CONTEXT (JMX)
+        ============================================================================
+        -->
+        <managementContext>
+            <managementContext createConnector="true" 
+                               connectorPort="1099"
+                               connectorHost="127.0.0.1"/>
+        </managementContext>
+
+        <!-- 
+        ============================================================================
+        PERSISTENCE ADAPTER - KahaDB for durability
+        ============================================================================
+        -->
+        <persistenceAdapter>
+            <kahaDB directory="${activemq.data}/kahadb"
+                    journalMaxFileLength="32mb"
+                    enableJournalDiskSyncs="true"
+                    indexWriteBatchSize="1000"
+                    indexCacheSize="10000"
+                    checksumJournalFiles="true"/>
+        </persistenceAdapter>
+
+        <!-- 
+        ============================================================================
+        SYSTEM USAGE LIMITS
+        ============================================================================
+        -->
+        <systemUsage>
+            <systemUsage>
+                <memoryUsage>
+                    <memoryUsage percentOfJvmHeap="70"/>
+                </memoryUsage>
+                <storeUsage>
+                    <storeUsage limit="50 gb"/>
+                </storeUsage>
+                <tempUsage>
+                    <tempUsage limit="10 gb"/>
+                </tempUsage>
+            </systemUsage>
+        </systemUsage>
+
+        <!-- 
+        ============================================================================
+        TRANSPORT CONNECTORS - DUAL SECURITY BOUNDARIES
+        ============================================================================
+        -->
+        <transportConnectors>
+            
+            <!--
+            INTERNAL CONNECTOR
+            - Binds to localhost only (127.0.0.1)
+            - No TLS (relies on network isolation)
+            - High connection limit for service-to-service
+            - Use when: Connecting from same host or trusted internal network
+            -->
+            <transportConnector 
+                name="internal"
+                uri="tcp://127.0.0.1:61616?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600&amp;wireFormat.maxInactivityDuration=30000"/>
+            
+            <!--
+            EXTERNAL CONNECTOR
+            - Binds to all interfaces (0.0.0.0)
+            - Requires TLS with client certificate authentication
+            - Limited connections for external partners
+            - Use when: Connecting from external trading partners
+            -->
+            <transportConnector 
+                name="external"
+                uri="ssl://0.0.0.0:61617?needClientAuth=true&amp;maximumConnections=100&amp;wireFormat.maxFrameSize=104857600&amp;wireFormat.maxInactivityDuration=60000"/>
+            
+            <!--
+            STOMP CONNECTOR (Optional)
+            - For web-based clients using WebSocket
+            - TLS required
+            -->
+            <transportConnector 
+                name="stomp+ssl"
+                uri="stomp+ssl://0.0.0.0:61618?needClientAuth=false&amp;maximumConnections=50"/>
+                
+        </transportConnectors>
+
+        <!-- 
+        ============================================================================
+        PLUGINS
+        ============================================================================
+        -->
+        <plugins>
+            
+            <!-- Logging plugin for audit trail -->
+            <loggingBrokerPlugin 
+                logAll="false"
+                logConnectionEvents="true"
+                logSessionEvents="false"
+                logTransactionEvents="true"
+                logConsumerEvents="false"
+                logProducerEvents="false"/>
+            
+            <!-- Statistics plugin for monitoring -->
+            <statisticsBrokerPlugin/>
+            
+            <!-- 
+            Simple Authentication Plugin
+            Replace with JAAS or LDAP in production
+            -->
+            <simpleAuthenticationPlugin anonymousAccessAllowed="false">
+                <users>
+                    <!-- Internal service accounts -->
+                    <authenticationUser username="hie-gateway" 
+                                        password="${HIE_GATEWAY_PASSWORD}"
+                                        groups="internal,producers,consumers"/>
+                    <authenticationUser username="audit-consumer" 
+                                        password="${AUDIT_CONSUMER_PASSWORD}"
+                                        groups="internal,consumers"/>
+                    
+                    <!-- External partner accounts -->
+                    <authenticationUser username="partner-hospital-a" 
+                                        password="${PARTNER_A_PASSWORD}"
+                                        groups="external,producers"/>
+                    <authenticationUser username="partner-lab-b" 
+                                        password="${PARTNER_B_PASSWORD}"
+                                        groups="external,producers,consumers"/>
+                </users>
+            </simpleAuthenticationPlugin>
+            
+            <!-- Authorization plugin -->
+            <authorizationPlugin>
+                <map>
+                    <authorizationMap>
+                        <authorizationEntries>
+                            <!-- Audit queues: internal only -->
+                            <authorizationEntry queue="audit.>"
+                                read="internal"
+                                write="internal"
+                                admin="internal"/>
+                            
+                            <!-- Clinical queues: both internal and external -->
+                            <authorizationEntry queue="clinical.>"
+                                read="internal,external"
+                                write="internal,external"
+                                admin="internal"/>
+                            
+                            <!-- DLQ: internal only -->
+                            <authorizationEntry queue="DLQ.>"
+                                read="internal"
+                                write="internal"
+                                admin="internal"/>
+                            
+                            <!-- Advisory topics -->
+                            <authorizationEntry topic="ActiveMQ.Advisory.>"
+                                read="internal"
+                                write="internal"
+                                admin="internal"/>
+                        </authorizationEntries>
+                    </authorizationMap>
+                </map>
+            </authorizationPlugin>
+            
+        </plugins>
+
+    </broker>
+
+</beans>
